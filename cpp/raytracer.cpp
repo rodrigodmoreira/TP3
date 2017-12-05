@@ -60,8 +60,8 @@ Vector3 RayTracer::castRay(Scene& scene, Ray& ray) {
         // Exercício 1: Coloque a componente ambiente  na cor resultante
         // luz ambiente: coefAmbienteLuz*corMat (1 linha)
 
-        shadingColor = shadingColor.mult(closestObjectHit->material->ambientCoefficient);
-        shadingColor = shadingColor.cwMult(closestObjectHit->pygment->color1);
+        shadingColor = shadingColor.mult(material->ambientCoefficient);
+        shadingColor = shadingColor.cwMult(pygment->color1);
 
         // Agora, precisamos saber se as fontes de luz estão iluminando
         // este ponto do objeto
@@ -108,40 +108,41 @@ Vector3 RayTracer::castRay(Scene& scene, Ray& ray) {
                 //   (na variável shadingColor, ~15 linhas)
 
                 // Vetores
-                    Vector3 normal = closestIntersection.intersectionNormal.normalized();
-                    Vector3 l = raioLight.v.normalized();
+                    Vector3 normalV = closestIntersection.intersectionNormal.normalized();
 
-                    Vector3 lightV = ((light->position).diff(closestIntersection.intersectionPoint)).normalized();
+                    Vector3 lightV = raioLight.v.normalized();
                     Vector3 viewV = ((scene.camera.eye).diff(closestIntersection.intersectionPoint)).normalized();
  
-                    Vector3 reflV = (((normal).diff(lightV)).mult(2*normal.dotProduct(lightV))).normalized();                   
+                    Vector3 reflV = ((normalV.mult(2*normalV.dotProduct(lightV))).diff(lightV)).normalized();                   
                     Vector3 halfwayV = ((lightV).add(viewV)).normalized();
 
-                    double d = (light->position.diff(closestIntersection.intersectionPoint)).norm(); // light-intersection point distance
+                    double d = (light->position.diff(closestIntersection.intersectionPoint)).norm(); // light <-> intersection_point distance
 
                 // 2º termo - contribuição da luz
                     Vector3 lightLight = (light->color); // Light color term
 
                 // Componente difusa
-                    double dotProductNxL = (normal).dotProduct(l);
+                    double dotProductNxL = (normalV).dotProduct(lightV);
                     Vector3 diffuseTerm = (pygment->color1.mult(material->diffuseCoefficient)).mult((dotProductNxL<TINY)? 0 : dotProductNxL);
 
                 // Componente especular
-                    double dotProductNxH = (normal).dotProduct(halfwayV);
-                    double dotProductVxR = (viewV).dotProduct(reflV);
+                    double dotProductNxH = (normalV).dotProduct(halfwayV);
+                    double dotProductVxR = (viewV).dotProduct(reflV);   //USANDO ATUALMENTE O VxR                    
                     
-                    double specularTerm = material->specularCoefficient * pow( (dotProductNxH<TINY)? 0 : dotProductNxH, material->specularExponent);
-                
                 // Add componente difusa e especular
                 // Para add componente especular, trocar diffuseTerm por diffuseTerm.add(specularTerm)
-                    lightLight = lightLight.cwMult(diffuseTerm.add(specularTerm));
-                
-                // Atenuação da luz
                     double attenuation = 1/(light->constantAttenuation + light->linearAttenuation*d + light->quadraticAttenuation*d*d);
                     lightLight = lightLight.mult(attenuation);
 
+                    // lightLight = lightLight.cwMult(diffuseTerm);
+                    shadingColor = shadingColor.add(lightLight.cwMult(diffuseTerm));
+                // Atenuação da luz
+                    // lightLight = lightLight.mult(attenuation);
+
                 // Add contribuição da fonte de iluminação à cor do pixel
-                    shadingColor = shadingColor.add( lightLight ); 
+                    float specularMultiplication = pow(dotProductVxR, material->specularExponent);
+                    double specularTerm = material->specularCoefficient * max(0.f, specularMultiplication); //pow( (dotProductNxH<TINY)? 0 : dotProductNxH, material->specularExponent);
+                    shadingColor = shadingColor.add(lightLight.mult(specularTerm) ); 
             }
         }
 
