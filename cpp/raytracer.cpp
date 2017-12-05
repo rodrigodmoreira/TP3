@@ -5,6 +5,8 @@
 #include <iostream>
 #include <cmath>
 
+#define TINY 1E-3
+
 using namespace std;
 
 
@@ -90,8 +92,11 @@ Vector3 RayTracer::castRay(Scene& scene, Ray& ray) {
                 Object* currentObject = &(scene.objects[n_obj]);
                 RayResponse response = currentObject->intersectsWith(raioLight);
                 if (response.intersected) {
-                    hitsAnotherObjectBeforeLight = true;
-                    break;
+                    if(closestIntersection.intersectionPoint.diff(currentObject->position).norm() <= closestIntersection.intersectionPoint.diff(light->position).norm())
+                    {
+                        hitsAnotherObjectBeforeLight = true;
+                        break;
+                    }
                 }
             }
 
@@ -102,28 +107,41 @@ Vector3 RayTracer::castRay(Scene& scene, Ray& ray) {
                 //   especular) e somar o resultado na cor resultante
                 //   (na variável shadingColor, ~15 linhas)
 
-                // 2º termo
-                double d = (light->position.diff(closestIntersection.intersectionPoint)).norm(); // light-intersection point distance
+                // Vetores
+                    Vector3 normal = closestIntersection.intersectionNormal.normalized();
+                    Vector3 l = raioLight.v.normalized();
 
-                double attenuation = 1/(light->constantAttenuation + light->linearAttenuation*d + light->quadraticAttenuation*d*d);
-                Vector3 lightLight = (light->color).mult(attenuation); // Light color term
+                    Vector3 lightV = ((light->position).diff(closestIntersection.intersectionPoint)).normalized();
+                    Vector3 viewV = ((scene.camera.eye).diff(closestIntersection.intersectionPoint)).normalized();
+ 
+                    Vector3 reflV = (((normal).diff(lightV)).mult(2*normal.dotProduct(lightV))).normalized();                   
+                    Vector3 halfwayV = ((lightV).add(viewV)).normalized();
 
-                double dotProductNxL = (closestIntersection.intersectionNormal.normalized()).dotProduct(raioLight.v.normalized());
-                if(dotProductNxL<0) dotProductNxL = 0;
-                Vector3 diffuseTerm = (closestObjectHit->pygment->color1.mult(closestObjectHit->material->diffuseCoefficient)).mult(dotProductNxL);
+                    double d = (light->position.diff(closestIntersection.intersectionPoint)).norm(); // light-intersection point distance
 
-                Vector3 viewV = ((closestObjectHit->position).diff(ray.p0)).normalized();
-                Vector3 lightV = ((light->position).diff(closestObjectHit->position)).normalized();
-                Vector3 halfwayV = (lightV.add(viewV)).normalized();
-                double dotProductNxH = (closestIntersection.intersectionNormal.normalized()).dotProduct(halfwayV);
-                if(dotProductNxH<0) dotProductNxH = 0;
-                double specularTerm = closestObjectHit->material->specularCoefficient*pow(dotProductNxH,closestObjectHit->material->specularExponent);
+                // 2º termo - contribuição da luz
+                    Vector3 lightLight = (light->color); // Light color term
+
+                // Componente difusa
+                    double dotProductNxL = (normal).dotProduct(l);
+                    Vector3 diffuseTerm = (pygment->color1.mult(material->diffuseCoefficient)).mult((dotProductNxL<TINY)? 0 : dotProductNxL);
+
+                // Componente especular
+                    double dotProductNxH = (normal).dotProduct(halfwayV);
+                    double dotProductVxR = (viewV).dotProduct(reflV);
+                    
+                    double specularTerm = material->specularCoefficient * pow( (dotProductNxH<TINY)? 0 : dotProductNxH, material->specularExponent);
                 
-                lightLight = lightLight.cwMult(diffuseTerm.add(specularTerm));
+                // Add componente difusa e especular
+                // Para add componente especular, trocar diffuseTerm por diffuseTerm.add(specularTerm)
+                    lightLight = lightLight.cwMult(diffuseTerm.add(specularTerm));
                 
+                // Atenuação da luz
+                    double attenuation = 1/(light->constantAttenuation + light->linearAttenuation*d + light->quadraticAttenuation*d*d);
+                    lightLight = lightLight.mult(attenuation);
 
-                shadingColor = shadingColor.add( lightLight );
-
+                // Add contribuição da fonte de iluminação à cor do pixel
+                    shadingColor = shadingColor.add( lightLight ); 
             }
         }
 
